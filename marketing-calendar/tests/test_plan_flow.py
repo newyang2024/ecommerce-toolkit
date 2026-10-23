@@ -1,8 +1,14 @@
 import unittest
 from datetime import date
+from unittest.mock import MagicMock, patch
 
 from marketing_calendar.date_range import ReportDateRange
-from marketing_calendar.plan_flow import _all_dimensions_selected, build_plan_request
+from marketing_calendar.plan_flow import (
+    PlanReportFlowError,
+    _all_dimensions_selected,
+    _open_plan_submenu_option,
+    build_plan_request,
+)
 from marketing_calendar.report_rules import (
     ALL_DIMENSIONS,
     PLAN_SCENARIO_GROUP,
@@ -39,3 +45,22 @@ class PlanReportRequestTests(unittest.TestCase):
         self.assertEqual(PLAN_DIMENSION_VALUES, ("campaign", "date"))
         self.assertTrue(_all_dimensions_selected("维度 计划,时间"))
         self.assertFalse(_all_dimensions_selected("维度 计划"))
+
+    def test_submenu_rehovers_after_transient_rerender(self) -> None:
+        trigger = MagicMock()
+        trigger.get_attribute.return_value = "mx-trigger mx-trigger-open"
+        root = MagicMock()
+        item = MagicMock()
+        option = MagicMock()
+        with (
+            patch("marketing_calendar.plan_flow._marketing_scenario_trigger", return_value=trigger),
+            patch("marketing_calendar.plan_flow._option_input", side_effect=[
+                root, PlanReportFlowError("暂未展开"), root, option,
+            ]),
+            patch("marketing_calendar.plan_flow._unique_visible", return_value=item),
+        ):
+            result = _open_plan_submenu_option(MagicMock(), "onebpUnion", "短直联动")
+        self.assertIs(result, option)
+        self.assertEqual(item.locator.return_value.dispatch_event.call_count, 2)
+        item.locator.assert_called_with(".mx-output-link")
+        trigger.click.assert_not_called()

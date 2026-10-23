@@ -106,11 +106,10 @@ def apply_plan_scenarios(page: Any) -> None:
     root_menu_item = root_group.locator("xpath=../../..")
     _unique_visible(root_menu_item, "内容营销一级菜单项")
 
-    # 子级菜单监听的是完整的 mx-output-item 行，而非 checkbox 或 label。
-    # 每次勾选前重新悬停，避免组件重绘导致子菜单关闭。
+    # 子级菜单的 mouseover 实际绑定在 mx-output-link 上，而非外层行。
+    # 勾选后组件可能关闭或重绘菜单；每个子项都重新展开。
     for name in ("超级直播", "短直联动"):
-        root_menu_item.hover()
-        option = _option_input(page, PLAN_SCENARIO_VALUES[name], name)
+        option = _open_plan_submenu_option(page, PLAN_SCENARIO_VALUES[name], name)
         option.wait_for(state="visible")
         _set_checkbox(option, True)
 
@@ -127,6 +126,24 @@ def apply_plan_scenarios(page: Any) -> None:
 
     confirm = _unique_visible(page.get_by_text("确定", exact=True), "营销场景确认按钮")
     confirm.click()
+
+
+def _open_plan_submenu_option(page: Any, value: str, name: str):
+    for attempt in range(2):
+        trigger = _marketing_scenario_trigger(page)
+        if "mx-trigger-open" not in (trigger.get_attribute("class") or ""):
+            trigger.click()
+        root_group = _option_input(page, PLAN_SCENARIO_GROUP_VALUE, "内容营销")
+        root_menu_item = _unique_visible(
+            root_group.locator("xpath=../../.."), "内容营销一级菜单项"
+        )
+        root_menu_item.locator(".mx-output-link").dispatch_event("mouseover")
+        try:
+            return _option_input(page, value, name)
+        except PlanReportFlowError:
+            if attempt == 1:
+                raise
+    raise PlanReportFlowError(f"营销场景选项未出现：{name}")
 
 
 def apply_plan_dimensions(page: Any) -> None:
