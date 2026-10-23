@@ -25,7 +25,6 @@ from marketing_calendar.download_tasks import (
     open_download_tasks,
     snapshot_download_tasks,
     task_baseline,
-    wait_for_task,
 )
 from marketing_calendar.report_filters import configure_report, submit_report_dialog
 from marketing_calendar.risk_guard import (
@@ -124,7 +123,7 @@ def run_download(
     reports: Sequence[str],
     progress: Callable[[str, str, str], None] | None = None,
 ) -> Path:
-    """顺序配置、提交、确认及归档；任何不确定状态都停止，不自动重提。"""
+    """先逐张提交并确认任务，再统一下载；不确定状态不自动重提。"""
     manifest_path = archive.root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     completed = {
@@ -137,6 +136,7 @@ def run_download(
         if progress is not None:
             progress(report_key, phase, message)
 
+    confirmed: dict[str, str] = {}
     for report_key in reports:
         if report_key in completed:
             report_progress(report_key, "complete", "已归档，续跑时跳过")
@@ -172,34 +172,61 @@ def run_download(
             task = _find_task(snapshot_download_tasks(page), record.task_id)
         else:
             raise SubmissionUncertain(f"{report_key} 的提交状态无法确认")
+        confirmed[report_key] = task.task_id
+        report_progress(report_key, "queued", "任务 ID 已确认，稍后统一下载")
 
-        if not task.is_ready:
-            report_progress(report_key, "waiting", "等待网站生成报表")
-            task = wait_for_task(
-                lambda: _refresh_and_snapshot(page, config),
-                task.task_id,
-                config.download.timeout_seconds,
-                max(15, config.download.poll_interval_seconds),
+    if not confirmed:
+        return manifest_path
+
+    # 所有待处理报表均已有任务 ID 后，才进入统一下载阶段。谁先生成好就先归档谁。
+    open_download_tasks(page, config)
+    tasks = snapshot_download_tasks(page)
+    pending = dict(confirmed)
+    deadline = time.monotonic() + config.download.timeout_seconds
+    last_status: dict[str, str] = {}
+    while pending:
+        available = {task.task_id: task for task in tasks}
+        downloaded = False
+        for report_key, task_id in tuple(pending.items()):
+            task = available.get(task_id)
+            if task is None:
+                raise DownloadTaskError(
+                    f"已确认任务 {task_id} 不在当前任务列表；请手动核对，不会再次提交"
+                )
+            last_status[report_key] = task.status
+            if not task.is_ready:
+                report_progress(report_key, "waiting", "等待网站生成报表")
+                continue
+            report_progress(report_key, "downloading", "下载并校验归档文件")
+            raw_name = download_task_file(page, task_id, archive)
+            raw_path = archive.raw / raw_name
+            if raw_path.suffix.lower() != ".zip":
+                raise ArchiveError(f"下载文件不是 ZIP，保留原文件供检查：{raw_path}")
+            extracted = safe_extract_zip(
+                raw_path, archive.extracted, config.download.max_uncompressed_bytes
             )
-        report_progress(report_key, "downloading", "下载并校验归档文件")
-        raw_name = download_task_file(page, task.task_id, archive)
-        raw_path = archive.raw / raw_name
-        if raw_path.suffix.lower() != ".zip":
-            raise ArchiveError(f"下载文件不是 ZIP，保留原文件供检查：{raw_path}")
-        extracted = safe_extract_zip(
-            raw_path, archive.extracted, config.download.max_uncompressed_bytes
-        )
-        validations = [validate_csv_file(path) for path in extracted]
-        append_manifest_report(
-            archive,
-            {
-                "report_key": report_key,
-                "task_id": task.task_id,
-                "raw_file": raw_name,
-                "files": [item.as_dict() for item in validations],
-            },
-        )
-        report_progress(report_key, "complete", "下载、解压和校验完成")
+            validations = [validate_csv_file(path) for path in extracted]
+            append_manifest_report(
+                archive,
+                {
+                    "report_key": report_key,
+                    "task_id": task_id,
+                    "raw_file": raw_name,
+                    "files": [item.as_dict() for item in validations],
+                },
+            )
+            del pending[report_key]
+            downloaded = True
+            report_progress(report_key, "complete", "下载、解压和校验完成")
+        if not pending:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            states = "、".join(f"{key}={last_status[key]}" for key in pending)
+            raise DownloadTaskError(f"等待报表生成超时：{states}；不会重新提交任务")
+        if not downloaded:
+            time.sleep(min(max(15, config.download.poll_interval_seconds), remaining))
+        tasks = _refresh_and_snapshot(page, config)
     return manifest_path
 
 

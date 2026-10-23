@@ -355,13 +355,14 @@ class FrontendApp:
         if event.report_key in self.status_vars:
             names = {
                 "checking": "检查中", "filtering": "筛选设置", "submitting": "提交任务",
-                "confirming": "核对任务", "waiting": "平台生成等待", "downloading": "下载校验",
+                "confirming": "核对任务", "queued": "任务已确认", "waiting": "平台生成等待",
+                "downloading": "下载校验",
                 "complete": "已完成",
             }
             self.status_vars[event.report_key].set(names.get(event.phase, event.phase))
             checkpoints = {
                 "checking": 0, "filtering": 10, "submitting": 25, "confirming": 40,
-                "waiting": 50, "downloading": 65, "complete": 100,
+                "queued": 45, "waiting": 50, "downloading": 65, "complete": 100,
             }
             self._set_progress(event.report_key, checkpoints.get(event.phase))
         if event.phase in {"merge_check", "merging", "complete"} and event.report_key is None:
