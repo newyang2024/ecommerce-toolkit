@@ -169,7 +169,7 @@ def run_download(
         if record.status == "pending":
             task = _reconcile_new_task(page, config, journal, report_key)
         elif record.status == "confirmed" and record.task_id:
-            task = _find_task(snapshot_download_tasks(page), record.task_id)
+            task = _wait_for_confirmed_task(page, config, record.task_id)
         else:
             raise SubmissionUncertain(f"{report_key} 的提交状态无法确认")
         confirmed[report_key] = task.task_id
@@ -190,9 +190,11 @@ def run_download(
         for report_key, task_id in tuple(pending.items()):
             task = available.get(task_id)
             if task is None:
-                raise DownloadTaskError(
-                    f"已确认任务 {task_id} 不在当前任务列表；请手动核对，不会再次提交"
-                )
+                # 标题及首行先于完整列表渲染；目标行短暂缺席时只重读列表，
+                # 不触碰提交或下载按钮。
+                report_progress(report_key, "checking", "下载列表暂未显示本次任务，正在只读重查")
+                task = _wait_for_confirmed_task(page, config, task_id)
+                available[task_id] = task
             last_status[report_key] = task.status
             if not task.is_ready:
                 report_progress(report_key, "waiting", "等待网站生成报表")
@@ -251,10 +253,23 @@ def _refresh_and_snapshot(page: Any, config: AppConfig) -> tuple[DownloadTask, .
     return snapshot_download_tasks(page)
 
 
-def _find_task(tasks: Sequence[DownloadTask], task_id: str) -> DownloadTask:
-    matches = [task for task in tasks if task.task_id == task_id]
-    if len(matches) != 1:
-        raise DownloadTaskError(
-            f"已确认任务 {task_id} 不在当前任务列表；请手动核对，不会再次提交"
-        )
-    return matches[0]
+def _wait_for_confirmed_task(
+    page: Any, config: AppConfig, task_id: str
+) -> DownloadTask:
+    """短时只读重查已确认任务；仍缺席时暂停，绝不重新提交。"""
+    deadline = time.monotonic() + min(30, config.download.timeout_seconds)
+    tasks = snapshot_download_tasks(page)
+    while True:
+        matches = [task for task in tasks if task.task_id == task_id]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise DownloadTaskError(f"已确认任务 {task_id} 在列表中重复；请手动核对")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DownloadTaskError(
+                f"已确认任务 {task_id} 短时重查后仍不在当前任务列表；"
+                "请手动核对，不会再次提交或点击下载"
+            )
+        time.sleep(min(max(3, config.download.poll_interval_seconds), remaining))
+        tasks = _refresh_and_snapshot(page, config)
