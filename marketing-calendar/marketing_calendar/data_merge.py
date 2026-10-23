@@ -333,12 +333,23 @@ def _rewrite_source_sheet(
         header = _add_extra_headers(header)
     target.write(header)
 
+    date_style = None
     for row_number, values in enumerate(_rows_for_sheet(plan, sheet_key), start=2):
         original, buffer = _next_row(source, buffer)
         if original is None:
             raise MergeError(f"{sheet_key} 原表公式行不足：{row_number}")
+        if date_style is None:
+            date_cell = ET.fromstring(original).find(
+                f'c[@r="{_column_letters(START_COLUMNS[sheet_key])}{row_number}"]'
+            )
+            date_style = date_cell.get("s") if date_cell is not None else None
+            if date_style is None:
+                raise MergeError(f"{sheet_key} 原表日期列缺少可沿用的单元格格式")
         target.write(
-            _replace_row(original, row_number, values, START_COLUMNS[sheet_key], max_col)
+            _replace_row(
+                original, row_number, values, START_COLUMNS[sheet_key], max_col,
+                date_style=date_style,
+            )
         )
         completed = row_number - 1
         if progress is not None and (
@@ -375,6 +386,8 @@ def _replace_row(
     values: dict[int, tuple[str, str]],
     first_raw_column: int,
     max_column: int,
+    *,
+    date_style: str | None = None,
 ) -> bytes:
     row = ET.fromstring(original)
     if int(row.get("r", "0")) != row_number:
@@ -408,6 +421,8 @@ def _replace_row(
             continue
         value, header = entry
         attrs = {"r": f"{_column_letters(col)}{row_number}"}
+        if style is None and col == first_raw_column and header == "日期":
+            style = date_style
         if style is not None:
             attrs["s"] = style
         cell = ET.SubElement(row, "c", attrs)

@@ -38,6 +38,16 @@ class DataMergeTests(unittest.TestCase):
         self.assertEqual(result.find('c[@r="S2"]/is/t').text, "4290681686450271")
         self.assertEqual(result.find('c[@r="V2"]/v').text, "1.25")
 
+    def test_date_in_unstyled_template_row_inherits_date_style(self):
+        old = b'<row r="3"><c r="K3"/><c r="L3"/></row>'
+        values = {11: ("2026-09-01", "日期"), 12: ("17", "展现量")}
+        result = ET.fromstring(
+            _replace_row(old, 3, values, 11, 12, date_style="8")
+        )
+        self.assertEqual(result.find('c[@r="K3"]').get("s"), "8")
+        self.assertEqual(result.find('c[@r="K3"]/v').text, "46266")
+        self.assertIsNone(result.find('c[@r="L3"]').get("s"))
+
     def test_new_headers_are_added_without_shifting_old_header(self):
         old = b'<row r="1"><c r="CR1" s="7" t="inlineStr"><is><t>old</t></is></c></row>'
         result = ET.fromstring(_add_extra_headers(old))
