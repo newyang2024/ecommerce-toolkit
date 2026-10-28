@@ -6,6 +6,8 @@ Windows 桌面工具：下载万相台计划、商品、内容、关键词、人
 
 需要 Python 3.10～3.13、Microsoft Edge、Microsoft Excel。首次安装：
 
+若使用另行交付的“便携版 ZIP”，其中已经包含 Python 运行时，不用执行本节的 venv/pip 步骤；请按包内 [TXT 迁移说明](迁移说明_便携版.txt) 解压并运行。便携包由源码机执行 `python tools/build_portable.py` 生成，且不会包含真实业务文件。
+
 ```powershell
 cd marketing-calendar
 python -m venv .venv

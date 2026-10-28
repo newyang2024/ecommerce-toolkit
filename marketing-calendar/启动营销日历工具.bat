@@ -4,7 +4,8 @@ setlocal
 cd /d "%~dp0"
 
 set "APP_PYTHONW="
-if exist "%~dp0.venv\Scripts\pythonw.exe" set "APP_PYTHONW=%~dp0.venv\Scripts\pythonw.exe"
+if exist "%~dp0runtime\pythonw.exe" set "APP_PYTHONW=%~dp0runtime\pythonw.exe"
+if not defined APP_PYTHONW if exist "%~dp0.venv\Scripts\pythonw.exe" set "APP_PYTHONW=%~dp0.venv\Scripts\pythonw.exe"
 for /f "delims=" %%I in ('where pythonw.exe 2^>nul') do if not defined APP_PYTHONW set "APP_PYTHONW=%%I"
 
 if defined APP_PYTHONW (
