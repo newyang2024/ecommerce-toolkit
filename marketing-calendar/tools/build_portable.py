@@ -185,7 +185,7 @@ def build(output_dir: Path) -> tuple[Path, str]:
             digest.update(chunk)
     sha256 = digest.hexdigest()
     (output_dir / f"{final.name}.sha256.txt").write_text(
-        f"{sha256}  {final.name}\n", encoding="ascii"
+        f"{sha256}  {final.name}\n", encoding="utf-8"
     )
     return final, sha256
 
