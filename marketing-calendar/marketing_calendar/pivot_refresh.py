@@ -21,36 +21,59 @@ _POWERSHELL = r"""param(
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $endDate = [DateTime]::ParseExact($endDateText, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
-$latestName = '{0}/{1}/{2}' -f $endDate.Year, $endDate.Month, $endDate.Day
-
 function Send-Progress([string]$phase, [int]$index, [int]$total) {
     [Console]::Out.WriteLine(('PROGRESS|{0}|{1}|{2}' -f $phase, $index, $total))
     [Console]::Out.Flush()
 }
 
+function ConvertTo-PivotDate([string]$name) {
+    $trimmed = $name.Trim()
+    if ($trimmed -match '^([0-9]{4})[/-]([0-9]{1,2})[/-]([0-9]{1,2})$') {
+        try { return [DateTime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3]) } catch { return $null }
+    }
+    if ($trimmed -match '^([0-9]{4})年([0-9]{1,2})月([0-9]{1,2})日?$') {
+        try { return [DateTime]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3]) } catch { return $null }
+    }
+    return $null
+}
+
 function Test-DateItems($field) {
     $items = $field.PivotItems()
     for ($index = 1; $index -le $items.Count; $index++) {
-        if ([string]$items.Item($index).Name -match '^\d{4}/\d{1,2}/\d{1,2}$') { return $true }
+        if ($null -ne (ConvertTo-PivotDate ([string]$items.Item($index).Name))) { return $true }
     }
     return $false
 }
 
 function Get-DatePageField($pivot) {
-    $matches = @()
+    $namedMatches = @()
+    $dateItemMatches = @()
+    $blankMatches = @()
     $fields = $pivot.PivotFields()
     for ($index = 1; $index -le $fields.Count; $index++) {
         $field = $fields.Item($index)
         if ($field.Orientation -ne 3) { continue }
         $name = [string]$field.Name
-        if ($name.Trim() -eq '日期' -or ($name.Trim().Length -eq 0 -and (Test-DateItems $field))) {
-            $matches += $field
-        }
+        if ($name.Trim() -eq '日期') { $namedMatches += $field; continue }
+        if ($name.Trim().Length -eq 0) { $blankMatches += $field }
+        if (Test-DateItems $field) { $dateItemMatches += $field }
     }
-    if ($matches.Count -ne 1) {
-        throw "PivotTable '$($pivot.Name)' 的日期筛选字段不唯一或缺失，找到 $($matches.Count) 个。"
+    if ($namedMatches.Count -eq 1) { return $namedMatches[0] }
+    if ($namedMatches.Count -gt 1) {
+        throw "PivotTable '$($pivot.Name)' 的日期筛选字段不唯一，找到 $($namedMatches.Count) 个名称为日期的字段。"
     }
-    return $matches[0]
+    if ($dateItemMatches.Count -eq 1) { return $dateItemMatches[0] }
+    if ($dateItemMatches.Count -gt 1) {
+        throw "PivotTable '$($pivot.Name)' 的日期筛选字段不唯一，找到 $($dateItemMatches.Count) 个日期候选字段。"
+    }
+    # 部分 Excel 版本在透视缓存刷新前不会向 COM 暴露空白页字段的 PivotItems。
+    # 该工作簿的日期字段正是唯一的空白页筛选字段；此处仅在唯一时推断，不猜测多项。
+    if ($blankMatches.Count -eq 1) {
+        [Console]::Out.WriteLine("NOTICE|透视表 '$($pivot.Name)' 的日期字段在刷新前未暴露日期项，已按唯一空白页筛选字段识别。")
+        [Console]::Out.Flush()
+        return $blankMatches[0]
+    }
+    throw "PivotTable '$($pivot.Name)' 的日期筛选字段不唯一或缺失，找到 0 个名称或日期项候选，空白页筛选字段 $($blankMatches.Count) 个。"
 }
 
 function Get-FilterSnapshot($field) {
@@ -127,25 +150,23 @@ function Restore-FilterSnapshot($field, $snapshot) {
     }
 }
 
-function Get-TargetNames([bool]$monthly) {
-    if (-not $monthly) { return ,@($latestName) }
+function Get-TargetNames($field, [bool]$monthly) {
     $names = New-Object System.Collections.ArrayList
-    $dateItems = $script:targetDateField.PivotItems()
-    $pattern = '^([0-9]{4})/([0-9]{1,2})/([0-9]{1,2})$'
+    $dateItems = $field.PivotItems()
     $hasLatest = $false
     for ($index = 1; $index -le $dateItems.Count; $index++) {
         $name = [string]$dateItems.Item($index).Name
-        if ($name -match $pattern) {
-            $year = [int]$Matches[1]
-            $month = [int]$Matches[2]
-            $day = [int]$Matches[3]
-            if ($year -eq $endDate.Year -and $month -eq $endDate.Month -and $day -le $endDate.Day) {
-                if ($name -eq $latestName) { $hasLatest = $true }
+        $itemDate = ConvertTo-PivotDate $name
+        if ($null -ne $itemDate) {
+            if ($itemDate.Date -eq $endDate.Date) {
+                $hasLatest = $true
+                if (-not $names.Contains($name)) { [void]$names.Add($name) }
+            } elseif ($monthly -and $itemDate.Year -eq $endDate.Year -and $itemDate.Month -eq $endDate.Month -and $itemDate.Day -le $endDate.Day) {
                 if (-not $names.Contains($name)) { [void]$names.Add($name) }
             }
         }
     }
-    if (-not $hasLatest) { throw "月度日期筛选中找不到最新日 $latestName。" }
+    if (-not $hasLatest) { throw "日期筛选中找不到最新日 $endDateText。" }
     return ,@($names.ToArray())
 }
 
@@ -230,7 +251,7 @@ try {
     }
     $monthlyTargets = @($targets | Where-Object { $_.Monthly })
     if ($monthlyTargets.Count -ne 1) { throw "应有且只有一个‘渠道’月度透视表，实际 $($monthlyTargets.Count) 个。" }
-    if ($targets.Count -eq 0) { throw '“超级短视频”之前没有找到可更新的汇总透视表。' }
+    if ($targets.Count -eq 0) { throw '超级短视频之前没有找到可更新的汇总透视表。' }
 
     $caches = $book.PivotCaches()
     $cacheList = @($cacheIndices | Sort-Object)
@@ -244,7 +265,6 @@ try {
     for ($index = 0; $index -lt $targets.Count; $index++) {
         $target = $targets[$index]
         $pivot = $target.Pivot
-        $script:targetDateField = $target.DateField
         try {
             $pivot.ManualUpdate = $true
             $fields = $pivot.PivotFields()
@@ -265,10 +285,12 @@ try {
             }
             if ($target.Monthly) {
                 Set-PageItems $target.MonthField @([string]$endDate.Month)
-                $monthDates = Get-TargetNames $true
+                $monthDates = Get-TargetNames $target.DateField $true
                 Set-PageItems $target.DateField $monthDates
             } else {
-                Set-PageItems $target.DateField @($latestName)
+                $latestDates = Get-TargetNames $target.DateField $false
+                if ($latestDates.Count -ne 1) { throw "单日日期筛选未找到唯一最新日 $endDateText。" }
+                Set-PageItems $target.DateField $latestDates
             }
             $pivot.ManualUpdate = $false
             if (-not $pivot.RefreshTable()) { throw "透视表未能刷新。" }
@@ -276,12 +298,12 @@ try {
             throw "工作表 '$($target.Sheet.Name)' 的透视表 '$($pivot.Name)' 刷新或筛选恢复失败：$($_.Exception.Message)"
         }
 
-        $expectedDateNames = if ($target.Monthly) { @($monthDates | Sort-Object -Unique) } else { @($latestName) }
+        $expectedDateNames = if ($target.Monthly) { @($monthDates | Sort-Object -Unique) } else { @($latestDates) }
         $visibleDates = @()
         $items = $target.DateField.PivotItems()
         for ($itemIndex = 1; $itemIndex -le $items.Count; $itemIndex++) {
             $item = $items.Item($itemIndex)
-            if ($item.Visible -and [string]$item.Name -match '^\d{4}/\d{1,2}/\d{1,2}$') { $visibleDates += [string]$item.Name }
+            if ($item.Visible -and $null -ne (ConvertTo-PivotDate ([string]$item.Name))) { $visibleDates += [string]$item.Name }
         }
         if ((@($visibleDates | Sort-Object -Unique) -join ';') -ne ($expectedDateNames -join ';')) {
             throw "透视表 '$($pivot.Name)' 的日期筛选回读校验失败。"

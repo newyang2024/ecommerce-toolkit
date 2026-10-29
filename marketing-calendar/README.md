@@ -23,6 +23,8 @@ Copy-Item config\config.example.json config\config.json
 
 下载管理页若只显示了部分异步列表行，程序会短时、只读地重新加载并查找已确认的任务 ID；仍找不到时暂停人工核对。提交按钮和下载按钮不会因超时自动重复点击。
 
+透视表刷新会根据真实日期值而非固定日期文本格式定位筛选项；对模板中唯一的空白日期页筛选字段，兼容不同 Excel 版本在刷新前不暴露筛选项的表现。
+
 已有五份 CSV 时，可只做本地整理；运行目录须含 `manifest.json` 和 `extracted/`：
 
 ```powershell
