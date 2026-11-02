@@ -1,0 +1,23 @@
+{
+  "timezone": "Asia/Shanghai",
+  "paths": {
+    "output": "output",
+    "logs": "logs",
+    "browser_profile": "data/browser_profile"
+  },
+  "browser": {
+    "channel": "msedge",
+    "headless": false,
+    "timeout_ms": 30000
+  },
+  "site": {
+    "report_url": "https://one.alimama.com/index.html#/report/campaign",
+    "manual_login_timeout_seconds": 600
+  },
+  "download": {
+    "poll_interval_seconds": 3,
+    "timeout_seconds": 600,
+    "max_uncompressed_bytes": 1073741824
+  }
+}
+

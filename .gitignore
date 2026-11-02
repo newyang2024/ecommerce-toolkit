@@ -1,0 +1,39 @@
+# Python and local environments
+**/__pycache__/
+**/*.py[cod]
+**/*.pyd
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+**/.venv/
+**/venv/
+**/build/
+**/dist/
+**/*.egg-info/
+
+# Local configuration, credentials, browser state and temporary files
+.env
+.env.*
+**/config/config.json
+marketing-calendar/data/
+main-image-tool/04_链接库/
+main-image-tool/05_程序/data/
+main-image-tool/06_结果输出/
+**/.tmp/
+**/logs/
+**/output/
+
+# Real business inputs and generated workbooks
+**/*.xlsx
+**/*.xls
+**/*.xlsm
+**/*.csv
+**/*.zip
+**/*.docx
+~$*
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

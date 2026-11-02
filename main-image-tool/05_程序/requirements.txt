@@ -1,0 +1,7 @@
+playwright==1.63.0
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.19.2
+openpyxl==3.1.5
+PyYAML==6.0.3
+Pillow==12.3.0
+PyQt5==5.15.11

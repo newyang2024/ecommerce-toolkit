@@ -1,0 +1,37 @@
+# 天猫主图智能信息提取工具 运行配置
+
+browser:
+  cdp_url: "http://127.0.0.1:9223"   # 调试端口，与老项目 9222 隔离
+  connect_timeout: 15                # 连接 CDP 超时（秒）
+  new_page_timeout: 30               # 打开页面超时（秒）
+  login_check_url: "https://www.tmall.com"
+
+collect:
+  max_media_slots: 5                 # 最多检查前几个媒体位
+  carousel_max_flips: 8              # 轮播最多翻几张
+  page_load_wait: 3                  # 页面基础等待（秒）
+  retry_times: 2                     # 单商品失败重试次数
+  skip_video: true                   # 是否跳过视频封面
+
+humanize:
+  # 拟人随机延迟范围（秒），动作之间随机取值
+  action_delay: [0.8, 2.0]
+  between_items: [2.0, 4.0]          # 商品之间的间隔，保持一点节奏
+  page_settle: [2.0, 4.0]            # 页面加载后稳定等待，保证主图加载
+  batch_size: 8                      # 每采集多少个商品复查一次登录
+  long_rest_enabled: false           # 访问异常不影响主图，已停用长休息
+  long_rest: [45.0, 90.0]            # 长休息时长（停用，需要时再开）
+  reuse_same_item: true              # 同一商品 id 只打开一次，结果回填多行
+
+paths:
+  link_library: "../04_链接库/竞对AI价格表_本地链接库.xlsx"
+  result_dir: "../06_结果输出"
+  main_image_dir: "../06_结果输出/营销主图"
+  screenshot_dir: "../06_结果输出/主图截图"
+  ocr_dir: "../06_结果输出/ocr原始结果"
+  log_dir: "../06_结果输出/日志"
+
+output:
+  result_file_prefix: "竞对主图识别结果"
+  save_screenshot: true              # 是否保存主图原图
+  save_ocr_raw: true                 # 是否保存 OCR 原始结果
